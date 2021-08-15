@@ -1,0 +1,173 @@
+---
+title: "10.unsupervised"
+Date: Nov 10 2028
+editor_options:
+  chunk_output_type: inline
+output:
+  html_document:
+    df_print: paged
+Author: MPM
+---
+
+
+Principal Components
+====================
+We will use the `USArrests` data (which is in R)
+```{r}
+dimnames(USArrests)
+arrmean <-  apply(USArrests,2,mean)
+apply(USArrests,2, var)
+
+
+```
+
+We see that `Assault` has a much larger variance than the other variables. It would dominate the principal components, so we choose to standardize the variables when we perform PCA
+
+```{r}
+pca.out=prcomp(USArrests, scale=TRUE, center = T)
+pca.out
+names(pca.out)
+biplot(pca.out, scale=0, cex=0.5)
+```
+
+K-Means Clustering
+==================
+K-means works in any dimension, but is most fun to demonstrate in two, because we can plot pictures.
+Lets make some data with clusters. We do this by shifting the means of the points around.
+
+
+```{r}
+set.seed(101)
+x=matrix(rnorm(100*2),100,2)
+xmean=matrix(rnorm(8,sd=4),4,2)
+which=sample(1:4,100,replace=TRUE)
+x=x+xmean[which,]
+
+
+```
+
+
+
+
+```{r}
+plot(x,col=which,pch=20)
+```
+
+
+We know the "true" cluster IDs, but we wont tell that to the `kmeans` algorithm.
+
+
+```{r}
+
+x <-  as.data.frame(x) 
+colnames(x) = c("gene1", "gene2")
+
+
+km.out=kmeans(x,4,nstart=15)
+
+plot(x,col=km.out$cluster,cex=2,pch=1,lwd=2)
+points(x,col=which,pch=19)
+points(x,col=c(4,3,2,1)[which],pch=19)
+```
+
+
+
+
+```{r}
+km.out
+```
+
+Hierarchical Clustering
+=======================
+We will use these same data and use hierarchical clustering
+
+WE know there are 4 clusters so there should be 4 rather big arms of the dedrogram tree. 
+
+```{r}
+
+# complete linkage  
+hc.complete <- hclust(dist(x),method="complete")
+
+
+# single linkage  looks like it finds 3 clusters. 
+hc.single=hclust(dist(x),method="single")
+
+
+# Average linkage. Average is somewhere in between. 
+hc.average=hclust(dist(x),method="average")
+
+
+par(mfrow=c(3,1))
+plot(hc.complete)
+plot(hc.single)
+plot(hc.average)
+
+```
+Lets compare this with the actualy clusters in the data. We will use the function `cutree` to cut the tree at level 4.
+This will produce a vector of numbers from 1 to 4, saying which branch each observation is on. You will sometimes see pretty plots where the leaves of the dendrogram are colored. I searched a bit on the web for how to do this, and its a little too complicated for this demonstration.
+
+We can use `table` to see how well they match:
+```{r}
+library(pheatmap)
+# Cut the complete linkage tree at level 4: 
+hc.cut <- cutree(hc.complete,4)
+pheatmap(table(hc.cut,which))
+
+table(hc.cut,km.out$cluster)
+```
+or we can use our group membership as labels for the leaves of the dendrogram:
+```{r}
+plot(hc.complete,labels=which)
+```
+ 
+
+NCI60 data. 
+```{r}
+require(ISLR)
+class(NCI60)
+str(NCI60)
+NCI60$data[1:4,1:4]
+
+nci.labs <- NCI60$labs
+nci.data <- NCI60$data
+
+levels(factor(nci.labs))
+
+```
+
+
+```{r}
+
+table(nci.labs)
+```
+
+There aren't gene names : / 
+
+
+
+```{r}
+str(nci.data)
+```
+
+
+do PCA on the genes 
+
+
+```{r}
+pr.out <- prcomp(nci.data, center = T)
+screeplot(pr.out, type = "line" )
+```
+
+Create a functin that assigns a color to each element of vector. Use the funvtion to assign a color to each of the levels of a factor 
+
+```{r}
+Cols <- function(vec) {
+  cols = rainbow(length(unique(vec)))
+  return(cols[as.numeric(as.factor(vec))])
+}
+
+par(mfrow = c(1,2))
+
+plot(pr.out$x[ ,c(1,3)], col = Cols(nci.labs), pch=20)
+```
+

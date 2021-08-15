@@ -1,0 +1,304 @@
+---
+title: "6.subset selection"
+output: github_document
+author: MPM 
+---
+
+Use baseball ststs to predict a players salary. 
+
+
+```{r}
+library(ISLR)
+summary(Hitters)
+library(cowplot)
+
+head(Hitters)
+?Hitters()
+
+hitters = na.omit(Hitters)
+
+
+# With function
+with(hitters, sum(is.na(Salary)))
+
+```
+
+
+Best subset regression - not applicableto any genomics stuff. 
+This uses package" Leaps" this works really fast. 
+
+```{r}
+library(leaps)
+
+# run best subset selection on hitters data to predict salary. 
+regfit.full = regsubsets(Salary~., data=hitters)
+summary(regfit.full)
+
+```
+
+
+How to interpret results above: the rows are model subsets of that size eg row 1 is model size 1. a star indicates that variable was included in the best subset of models. The beset subset of size 2 has 2 variables starred and so on. Remember that from page 209 that forward stepwise can't drop variables whereas this method can. Another way of saying this is the models are not necessarily **nested** in best subset selection. 
+
+this run only used 8 variables but if you want to use all 16 variable combinations in the model you have to specify as below. 
+
+```{r}
+
+regfit.full = regsubsets(Salary~., data=hitters, nvmax = 19)
+
+# produce summary for plotting
+reg.summary <- summary(regfit.full)
+par(mfrow=(c(1,2)))
+plot(reg.summary$bic)
+plot(reg.summary$adjr2)
+
+```
+
+So this is the "best" model with 6 predictors given that we have n > p and can use this method.
+p212 - given that the BIC places larger penalties on larger models it makes sense that BIC is minimized with the model containing the fewest variables. 
+
+
+R^ 2 increases as variables are included. 
+
+plot all of the performance metrics. type = "l" specifies that points should be connected. 
+
+```{r}
+
+
+par(mfrow=c(2,2))
+plot(reg.summary$rss ,xlab=" Number of Variables " ,ylab=" RSS" ,type="l" )
+plot(reg.summary$adjr2 ,xlab =" Number of Variables " ,ylab=" AdjustedRSq",type= "l" )
+plot(reg.summary$cp ,xlab =" Number of Variables " ,ylab=" AdjustedRSq",type= "l" )
+plot(reg.summary$bic ,xlab =" Number of Variables " ,ylab=" AdjustedRSq",type= "l" )
+
+
+```
+
+There is a built in plotting function which allows you to  which can be used to display the selected variables for the best model with a given number of predictors ranked according to the performance metrics BIC, Cp , adjusted R^2 , or AIC. 
+
+```{r}
+plot(regfit.full, scale ="bic")
+```
+
+Walks is probably a surrogate of OBP! 
+At bats should be regressed out or these numbers should be limited to players with certain number of at bats.
+
+```{r}
+attach(hitters)
+salary.model <- lm(Salary ~ (Hits+Walks+CRBI+PutOuts))
+
+
+
+plot(salary.model)
+```
+
+
+Coeficients 
+```{r}
+coef(regfit.full ,6)
+```
+
+
+
+
+**Forward and Backward Stepwise Selection** 
+
+Using the same "leaps" package we can use specify within the regsubsets() function if we want to use forward or backward selection and we would get different results as all models will be nested.
+
+In this case the models are identical until 7 variables are included.
+
+```{r}
+coef(regfit.full ,7)
+```
+
+
+Now build model with a combination of variable selection and the training set validation set approach. 
+
+In order to use the validation set approach, split the observations into a training set and a test set.
+
+1) creating a random vector, train, of elements equal to TRUE if the corresponding observation is in the training set, and FALSE otherwise.
+```{r, define_train}
+set.seed(1)
+train <- sample(c(TRUE,FALSE), nrow(hitters), rep=T)
+```
+
+2) create the test vector by creating a vector of vectors not included in the training set. the ! in the command to create test causes TRUEs to be switched to FALSEs and vice versa.
+```{r, define_test}
+test <- (!train)
+```
+
+3) perform best subset selection on the testing data. 
+
+```{r, fit_train}
+regfit.best=regsubsets (Salary ~ . ,  
+                        data=Hitters[train ,],
+                        nvmax =19)
+```
+
+4) compute the validation set error for the best model of each model size. 
+  - First create a model matrix
+    https://www.youtube.com/watch?v=Hrr2anyK_5s
+
+The model.matrix() function is used in many regression packages for building an “X” matrix from data.
+
+```{r, eval_on_test1}
+
+#create a design matrix
+test.mat=model.matrix(Salary ~ ., data=Hitters[test, ])
+head(test.mat)
+
+```
+
+4) part 2
+
+Run a loop and for each model size size i : 
+    - extract the coeﬃcients from regfit.best for the best model of that size,
+    - multiply coefficients into corrresponding columns of the test model matrix to form predictions.  
+    - compute the test MSE.
+    
+```{r, eval_on_test2}
+
+# define val.errors variable outside of the loop
+val.errors = rep(NA, 19)
+
+
+# loop over all model sizes %*% is matrix multiplier. 
+for (i in 1:19) {
+  coefi <- coef(regfit.best, id=i )
+  pred <- test.mat[ ,names(coefi)]%*%coefi
+  val.errors[i] <- mean((hitters$Salary[test]-pred)^2)
+}
+
+
+#plot results 
+plot(val.errors, xlab = "number of model parameters", ylab = "validation set MSE")
+
+```
+    
+
+
+Finally do best subset regression on the full dataset. 
+
+It's recommended I use the best 10 variable subset when evaluating the method on the full dataset, not necesserily those same variables. important caveat. 
+
+
+```{r, fulldata}
+
+#fulldataset 
+regfit.best <- regsubsets(Salary ~ . , data = hitters, nvmax = 19)
+coef(regfit.best, 10)
+```
+
+We see that there is a different set of 10 variables here...
+
+We can generalize this into an r function: 
+```{r, predict_regsubsets}
+predict.regsubsets = function(object, newdata, id, ...) {
+    form = as.formula(object$call[[2]])
+    mat = model.matrix(form, newdata)
+    coefi = coef(object, id = id)
+    mat[, names(coefi)] %*% coefi
+}
+```
+
+
+Now can choose among the models of different sizes with a cross validation approach. Have to do subset selecton on each of the k training sets. 
+
+
+Model Selection by Cross-Validation
+-----------------------------------
+We will do 10-fold cross-validation. 
+
+```{r}
+
+set.seed(1)
+# creat a random sample of numbers from 1 to 10 with a length = nrows(hitters)
+folds=sample(rep(1:10,length=nrow(hitters)))
+table(folds) 
+
+
+# Create a matrix for errors. 10 rows (folds) by 19 subsets (variables) 
+cv.errors=matrix(NA,10,19)
+
+
+
+# best subset selection on Hitters data not part of k. 
+for(k in 1:10){
+  best.fit=regsubsets(Salary ~ ., 
+                      data=hitters[folds!=k, ],
+                      nvmax=19, 
+                      method="forward")
+  for(i in 1:19){
+    pred=predict.regsubsets(best.fit,hitters[folds==k, ], id=i) # make predictions for each subset size I of the data that was left out. 
+    cv.errors[k,i] = mean((hitters$Salary[folds==k]-pred)^2) # mean square error of predictions. 
+  }
+}
+
+
+```
+
+Taking apart the loop and function 
+
+```{r}
+# each fold of hitters that we subset with hitters[folds!=k, ] is one of the 10 fold subsets. 
+dim(hitters) # 263  20
+dim(hitters[folds!=2, ]) # 236 20 etc. 
+
+
+# cv errors is a matrix of MSE each computed for 19 model sizes over each of 10 folds. 
+cv.errors[1:5, 1:5]
+
+```
+
+
+Now  we can get the mean od the MSE for each model size that was made with 10 fold cross validation.
+
+```{r}
+rmse.cv=sqrt(apply(cv.errors,2,mean)) # 10 rows each row was a MSE for a particular row. 
+plot(rmse.cv,pch=19,type="b")
+```
+
+
+ 
+ **Ridge and lasso**
+ 
+ Ridge Regression and the Lasso
+-------------------------------
+We will use the package `glmnet`, which does not use the model formula language, so we will set up an `x` and `y`.
+```{r}
+library(ISLR)
+library(glmnet)
+dx = x=model.matrix(Salary~.-1,data=Hitters) 
+dy = y=Hitters$Salary
+```
+First we will fit a ridge-regression model. This is achieved by calling `glmnet` with `alpha=0` (see the helpfile). There is also a `cv.glmnet` function which will do the cross-validation for us. 
+```{r}
+y = y[!is.na(y)]
+fit.ridge=glmnet(x,y,alpha=0)
+plot(fit.ridge,xvar="lambda",label=TRUE)
+cv.ridge=cv.glmnet(x,y,alpha=0)
+plot(cv.ridge)
+```
+Now we fit a lasso model; for this we use the default `alpha=1`
+```{r}
+fit.lasso=glmnet(x,y)
+plot(fit.lasso,xvar="lambda",label=TRUE)
+cv.lasso=cv.glmnet(x,y)
+plot(cv.lasso)
+coef(cv.lasso)
+```
+
+ Suppose we want to use our earlier train/validation division to select the `lambda` for the lasso.
+ This is easy to do.
+```{r}
+lasso.tr=glmnet(x[train,],y[train])
+lasso.tr
+pred=predict(lasso.tr,x[-train,])
+dim(pred)
+rmse= sqrt(apply((y[-train]-pred)^2,2,mean))
+plot(log(lasso.tr$lambda),rmse,type="b",xlab="Log(lambda)")
+lam.best=lasso.tr$lambda[order(rmse)[1]]
+lam.best
+coef(lasso.tr,s=lam.best)
+```
+
+

@@ -1,0 +1,271 @@
+---
+title: "4.classification"
+author: mpm
+output: github_document
+---
+
+
+returns frommkt over 1250 days - s&p 500 percentage of growth lag1-lag5. 
+Lolume is total number traded 
+today - percentage growth on day 
+direction - up or down, can we predict up or down? 
+```{r}
+library(ISLR)
+attach(Smarket)
+names(Smarket)
+library(ggplot2)
+summary(Smarket)
+
+```
+
+
+```{r}
+Smarket[1:5,1:4]
+
+```
+
+```{r}
+cor(Smarket[,-9])
+```
+
+
+plot volume 
+```{r}
+ggplot(data=Smarket, aes(x=Year, y=Volume))+
+  geom_point()+
+  theme_light()
+  
+```
+
+Now fit a logistic regression to fit Direction using lag1-lag5 and volume. 
+
+```{r}
+glm.fits = glm(Direction~Lag1+Lag2+Lag3+Lag4+Lag5+Volume, data=Smarket, family=binomial)
+summary(glm.fits)
+```
+
+predict function = predict probability the market will go up given the values of the preictors in the model . remember glm is fitting a model of "direction"  as a function of the lag variables and volume of stock traded. 
+
+```{r}
+
+glm.probs = predict(glm.fits, type="response")
+plot(glm.probs, pch=20)
+# note that GLM.probs is a class numeric with length 1250.
+```
+
+To predict whenther market will go up or down convert the PREDICTED PROBABILITIES into class labels of "up" and "down"
+
+
+```{r}
+# first make a vector of values that say "down"
+glm.pred = rep("down", 1250)
+
+#now convert the down values int oup values for each corresponding p>50 from glm probs. 
+glm.pred[glm.probs > 0.5] = "up"
+
+# now use the table function with arguments glm pred vs direction to create a confusion matrix.
+
+table(glm.pred, Direction)
+
+```
+
+We can use the above output to calculate sensitivity and specificity characteristics for the predictor. 
+
+Note that these are misleading results. The model was trained and tested on the same dataset. the percnt correct is 52 os the training error rate is 47% which is an underestimate of the testing error rate. We need to fit the model usoing part of the data then calculate the accuracy on hold out or out of bag portion ofthe data. 
+
+One example is using the data from 2001 to 2004 to predic the responses from 2005. 
+
+Subsetting with boolean logical vectors
+```{r}
+train <- (Year<2005)
+
+#subsetting with boolean vectors. 
+Smarket.2005 <- Smarket[!train, ]
+
+#this is the data we will test our model with
+Direction.2005 = Direction[!train]
+  
+
+```
+
+Now fit a logistic regression model on thre training data only, then predict 2005 directions using the test model 
+```{r}
+#Subset with the subset operator in the glm.train function. 
+glm.train = glm(Direction~Lag1+Lag2+Lag3+Lag4+Lag5+Volume, data=Smarket, family=binomial, subset = train)
+
+#test the model on the 2005 data. 
+glm.probs.test <- predict(glm.train, Smarket.2005, type = "response")
+
+
+glm.pred2 = rep("Down", 252)
+glm.pred2[glm.probs.test>0.5] = "up"
+table(glm.pred2, Direction.2005)
+```
+
+Now look at Linear Discriminant analysis. lda() fnuction is similar to lm and glm but there is no need to specify family. 
+
+```{r}
+
+library(MASS)
+
+lda.fit=lda(Direction ~ Lag1+Lag2, data=Smarket, subset = train)
+
+lda.fit
+
+```
+
+
+priors - 42.9 % of the training data correspond to days in whcih market went down. 50.8% of training data observations market went up. 
+
+The coefficients of linear discrominants are the linear combination betas that are used for the LDA decision. These are the multipliers that are used to decide which class the observation belongs to:
+IF -0.65*Lag1 + -0.51*Lag2 is LARGE -- it predicts a market increase; if small it predicts a decrease. 
+
+
+predict on out of sample Smarket.2005 data based on the LDA fit. 
+Returns 
+class -- prediction s
+posterior - posterior probability that the kth column belongs in the kth class
+x - linear discriminants. 
+
+
+```{r}
+lda.predict = predict(lda.fit, Smarket.2005)
+head(lda.predict$posterior)
+# overall this is a pretty shitty predictor. 
+```
+
+
+Book goes on to use quadratic discriminant analysis and gets up to 60% correct predictions. 
+
+K nearest neighbors
+
+KNN makes predictions in a single command. 
+requires 4 inputs: 
+
+1. matrix containing the predictors associated with the training data 
+
+2. matrix containing predictors we want to test. 
+
+3. class labels for the training data 
+
+4. a value for K 
+
+```{r}
+library (class)
+
+train.X=cbind(Lag1,Lag2)[train , ]
+
+test.X=cbind (Lag1,Lag2)[!train , ]
+
+train.Direction = Direction[train]
+
+train.X
+```
+
+We need to set seed because if several observations are tied as nearest neighbors we nee to break the tie whic we do randomly. 
+
+```{r}
+
+set.seed (1)
+
+knn.pred=knn (train.X,
+              test.X,
+              train.Direction,
+              k=1)
+
+table(knn.pred, Direction.2005)
+```
+
+
+assess accuracy 
+```{r}
+(84+43) / 252
+```
+
+Not very good -- adjust our model training by setting k higher. 
+
+```{r}
+set.seed (1)
+
+knn.pred=knn (train.X,
+              test.X,
+              train.Direction,
+              k=5)
+
+table(knn.pred, Direction.2005)
+```
+
+Still not very good. 
+
+4.6.6 -- KNN application on demographic information for whether someone will buy insurance.
+
+Note in order to perform KNN on multivariate data you need to normalize -- KNN "sees" variables as real numbers -- if looking at salary data and age e.g. $1,000 and 50years are just "1000" and "50" so a salary increase of 1000 will be HUGELY weighted and will drive the results. Also if we measure salary in hundreds of dollars and years in weeks we would get completely different results. 
+
+We can simply standardize data with the "standardize" function. We get data with mean 0 and standard deviation 1. 
+
+```{r}
+attach(Caravan)
+standardized.X=scale(Caravan [,-86])
+var(Caravan [,1])
+var(Caravan [,2])
+var(standardized.X[,1])
+var(standardized.X[,2])
+```
+
+Split the observations into training and test observations: 
+
+```{r}
+test =1:1000
+
+train.X=standardized.X[-test ,]
+
+test.X=standardized.X[test ,]
+
+train.Y=Purchase[-test]
+
+test.Y=Purchase[test]
+
+
+
+```
+
+
+now test  -- note we are looking for an error rate better than the null prediction -- only 6% of the observations are classified as yes so the error rate will be 6% if we have a classifier that just always predicts "no"
+
+```{r}
+set.seed(1)
+knn.pred=knn(train.X,
+             test.X,
+             train.Y,
+             k=1)
+
+# what percent did we get wrong 
+mean(test.Y!= knn.pred)
+```
+
+
+What about the fraction of people that are correctly preicted to buy insurance? 
+
+```{r}
+table(knn.pred, test.Y)
+
+```
+
+```{r}
+9 / (9+68)
+```
+
+PPV is 12%, double the success rate of randomly guessing. 
+
+KNN improves greatly with k=5 
+```{r}
+knn.pred=knn(train.X,
+             test.X,
+             train.Y,
+             k=5)
+
+table(knn.pred, test.Y)
+```
+
+
+

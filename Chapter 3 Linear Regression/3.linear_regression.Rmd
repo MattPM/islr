@@ -1,0 +1,324 @@
+---
+title: "linear regression"
+author: "MPM"
+output: github_document
+---
+
+
+
+```{r}
+
+library(MASS)
+library(ISLR)
+
+names(Boston)
+
+# plot some data - regress median housing value onto crime rates. 
+plot(Boston$medv ~Boston$crim)
+```
+
+What is the relationship between these variables - fit a linear model
+
+
+```{r}
+
+fit1 = lm(Boston$medv ~Boston$crim)
+fit1
+plot(fit1)
+
+```
+
+
+
+print out the confidence interval for the fit of crime vs median housing values
+
+```{r}
+confint(fit1)
+```
+
+
+```{r}
+
+### Multiple linear regression
+fit2=lm(medv~lstat+age,data=Boston)
+summary(fit2)
+
+
+```
+
+
+Now fit a linear model with all of the variables included: in this model we see hat age is no longer significant. Many other predictors are correlated with age and when age is included with all of these other vaiavbles it is no longer significant. 
+
+```{r}
+fit3=lm(medv~.,Boston)
+summary(fit3)
+
+
+```
+
+
+```{r}
+par(mfrow=c(2,2))
+plot(fit3)
+
+```
+
+The sqrt standardized residuals vs fitted plot tells you if the variance is changing as a function of the mean....
+
+
+
+Ok now remove some variables from the linear model 
+
+```{r}
+
+
+fit4 = update(fit3, ~ -age -indus)
+fit4
+```
+
+
+
+Now want to add interaction terms the * in the firmula means we  will have the main effect of each and the interction term. 
+
+The interaction term is represented in the summary as lstat:age.
+
+below we see that the main effect for age is not significant the interaction is significant. 
+
+```{r}
+fit5=lm(medv~lstat*age,Boston)
+summary(fit5)
+```
+
+
+Notice here we can use the semicolon to do 2 commands... 
+
+we are adding a nonlinear relationship to the model and fitting a polynomial function to the lstat 2 data 
+
+the I(x,y) notation means we are using the product of lstat^2 as a predictor in the model. 
+```{r}
+fit6=lm(medv~lstat +I(lstat^2),Boston); summary(fit6)
+```
+
+
+
+Attatch the dataset to make the named variables (columnnames) available for plotting without secifying Boston$ operator. 
+
+For the parmfrow thing to work to plot multipe things and for rmarkdown documents to plot stuff you have to run the whole chunk or highlight the portion of the code that is part of the plotting scheme (this will also enable me to do some ggplot side by side. 
+
+```{r}
+attach(Boston)
+
+par(mfrow=c(1,1))
+plot(medv~lstat)
+
+#firstargument is lstat variable, second argumant is the fitted points from the quadratic fit, fit6. 
+points(lstat,fitted(fit6),col="red",pch=20)
+
+
+```
+
+
+plotting base R: pch = the plotting character. cex = 2 means we want to enlarge those characters by 2. 
+```{r}
+plot(1:20, pch=1:20, cex = 2)
+
+```
+
+
+
+Now we want to work with some qualitative data. 
+
+```{r}
+summary(Carseats)
+```
+
+
+
+find out how the quantitative values are coded 
+```{r}
+contrasts(Carseats$ShelveLoc)
+```
+
+```{r}
+attach(Carseats)
+plot(Sales ~ ShelveLoc)
+
+```
+
+
+Fit a model with interactions between income and advertising and age and price 
+
+```{r}
+carmodel=lm(Sales~.+Income:Advertising+Age:Price,Carseats)
+summary(carmodel)
+```
+
+
+
+
+Write a little function ** Note that pch=20 is a nice little character for plotting many points. 
+
+```{r}
+attach(Carseats)
+
+regplot=function(x,y,...){
+  fit=lm(y~x)
+  plot(x,y,...)
+  abline(fit,col="red")
+}
+regplot(Price,Sales,xlab="Price",ylab="Sales",col="blue",pch=20)
+
+
+```
+
+
+Exercises 
+
+The R^2 is the correlation between the two variables and measures how closely they are associated. The p value and t statistic merely measure how strong is the evidence that there is a nonzero association. Even a weak effect can be extremely significant given enough data.
+Pval and t statistic in isolation tell you nothing. R2 tells you there is a fairly large association between x andy → it is the proportion of variance in y explained by x. 
+
+
+
+
+```{r}
+names(Auto)
+```
+
+
+```{r}
+attach(Auto)
+
+```
+
+
+quick plot of all variables with pairs()
+
+```{r}
+pairs(Auto)
+```
+
+weight horsepower displacement look negatively coorelated with mpg. 
+
+
+```{r}
+library(ggplot2)
+ggplot(data = Auto)+ 
+  aes(x=horsepower, y=mpg, color = weight) + 
+  geom_point() + 
+  theme_light()
+```
+
+there is a noticable relationship between horsepower and mpg, with the weight of the car also tracking with the horsepower. WE could probably recode weight as a categorical and bin in 2 or  three groups for a logistic fit. 
+
+
+```{r}
+ggplot(data = Auto)+ 
+  aes(x=horsepower, y=mpg, color = year ) + 
+  geom_point() + 
+  geom_smooth(method = "lm") + 
+  theme_light()
+```
+
+
+now build a model
+
+```{r}
+auto1 <- lm(Auto$mpg~Auto$horsepower)
+
+summary(auto1)
+```
+
+For every 10 increase in horsepower our miles per gallon drops by about 1.5 in the model but it also appears that we can fit a polynomial coefficient as well. 
+
+
+predict the mpg of a car w 98 hp
+
+```{r}
+predict(auto1, data.frame(horsepower=c(98)), interval="prediction")
+
+```
+
+
+
+Quick and easy way to display some key regression features in ggplot found here: 
+https://sejohnston.com/2012/08/09/a-quick-and-easy-function-to-plot-lm-results-in-r/
+slighylt modified 
+
+```{r}
+
+ggplotRegression <- function (fit) {
+
+    require(ggplot2)
+    ggplot(fit$model, aes_string(x = names(fit$model)[2], y = names(fit$model)[1])) + 
+      geom_point() +
+      theme_light() +
+      stat_smooth(method = "lm", col = "blue") +
+      labs(title = paste("Adj R2 = ",signif(summary(fit)$adj.r.squared, 5),
+                         "Intercept =",signif(fit$coef[[1]],5 ),
+                         " Slope =",signif(fit$coef[[2]], 5),
+                         " P =",signif(summary(fit)$coef[2,4], 5)))
+}
+
+ggplotRegression(auto1)
+
+```
+
+Now look through the diagnostic plots; her eare definitely highly leveraged observations of horsepower. 
+
+Cook's distance is the sum of all the changes in the regression model (the fitted response values + the MSE)  when observation i is removed from the regression model. 
+
+```{r}
+plot(auto1)
+```
+
+
+```{r}
+library(dplyr)
+library(corrplot)
+attach(Auto)
+Auto = Auto %>% 
+  select(-name)
+
+
+
+heatmap(cor(Auto))
+
+```
+
+```{r}
+cor(Auto)
+```
+
+
+
+
+```{r}
+all <- lm(mpg ~ ., data = Auto)
+summary(all)
+```
+
+
+```{r}
+plot(all)
+```
+
+
+Add some interaction terms -- try to figure out if fuel efficiency added each year is directly correlated with vehicle weight: 
+
+```{r}
+interact <- lm(mpg ~ weight*year)
+summary(interact)
+```
+
+```{r}
+ggplotRegression(interact)
+```
+
+
+F-statistic: 649.3 on 3 and 388 DF,  p-value: < 2.2e-16* 
+
+```{r}
+plot(interact)
+```
+
+
