@@ -1,18 +1,14 @@
 ---
 title: "10.unsupervised"
-Date: Nov 10 2028
-editor_options:
-  chunk_output_type: inline
-output:
-  html_document:
-    df_print: paged
+Date: Nov 10 2018
+output: github_document
 Author: MPM
 ---
 
 
 Principal Components
 ====================
-We will use the `USArrests` data (which is in R)
+We will use the `USArrests` data 
 ```{r}
 dimnames(USArrests)
 arrmean <-  apply(USArrests,2,mean)
