@@ -11,8 +11,8 @@
 *.RDS
 *.rds
 *.csv
-*.png
-*.pdf
+# *.png
+# *.pdf
 *.txt
 *.tsv
 *.mtx
