@@ -1,0 +1,325 @@
+---
+title: "7. Non-linear modeling"
+output: github_document
+Author: MPM
+---
+
+Important section is GAMS. There are situations when nonlinearity in an individual predictor is really obvious e.g. an example is given wheere 10 fold cross validated errors are highly minimized by simply adding a extra degree of freedomin the form of a regression spline fit to that predictor instead of forcing a line through the data. 
+
+With polynomial regression, in general, fits are not optimal at the high and low values of the predictors. Not used often. If we need some wiggly line to fit a response variable then you need a really high order polynomial, producing unreasonable predictions at the boundaries. it is much more stable to instead keep the degree fixed, like x^3 but use an increased number of knots in the data to locally fit the areas of non-linearity, introducing a *natural spline* also stabilizes estimates at the boundaries by forcing linear fit at those regions. 
+
+#### Topics 
+
+- Polynomial regression  
+
+- Regression Splines
+    - Piecewise polynomials  
+    - includes spline basis representation e.g. cubic basis splines.  
+- Step functions  
+  These use arbitrary cut points like 5 year age bins then fitting within bin. 
+- Smoothing splines (see equation p 227)  
+    - instead of using knots, we minimize a loss + smoothness equation of the same form as in elasticnet; we introduce smoothness by a tuning parameter times the second derivative of the function fit to the data which is a measure of how 'bumpy' the function is.  The tuning parameter value at infinity = no penalty = wiggily fit = low *bias*.  
+- Local regression  (see figure p 281)  
+    - this perforoms poorly when p > 3 or 4.  
+- Generalized Additive models (GAM)  
+instead of y ~ beta1(x1) + beta2(x2) ...,  we fit y ~ f1(xi1) + f2(xi2)  + .... calculating a separate f() for each x then add all of the contributions together to predict y. As with generalized linear models, the model is restricted to be additive, but we can manually add interaction terms as well.  
+
+
+[Good article on GAMs](http://environmentalcomputing.net/intro-to-gams/)
+
+##### data 
+
+setting up data 
+```{r}
+library(ISLR)
+suppressMessages(library(tidyverse))
+d = Wage
+str(d)
+colnames(d)
+d %>% colnames
+d = d %>% droplevels()
+d$region %>% unique 
+
+```
+
+## Polynomial regression
+
+Predicting wage with a 4th degree polynomial on age.  
+poly returns a matrix of a basis of orthogonal polynomials. Each column is a linear combination of age, age^2, age^3 ... Think this is the eigenvalue of the poynomial matrix based on the prcomp 
+```{r}
+f1 = wage ~ poly(age,4)
+# what id poly doing? 
+X = poly(d$age,4)
+corrplot::cor.mtest(X)
+pc = prcomp(X)
+pc$rotation
+pheatmap::pheatmap(poly(d$age,4))
+
+```
+
+Fitting the model : 
+
+```{r}
+fit = lm(formula = f1, data = d)
+coef(summary(fit))
+```
+
+WE can also fit age, age^2 age^3 directly  with RAW = T. This doesnt impact the fitted values only hte coefficients. 
+
+```{r}
+f2 = wage ~ poly(age,4, raw = TRUE)
+fit2 = lm(formula = f2, data = d)
+coef(summary(fit2))
+```
+
+Simulate a grid of ages to make predictions on, then predict with the polynomial function. 
+
+```{r}
+# simulate ages with hte same range of the original values 
+age.grid = seq(from = min(range(d$age)), to = max(range(d$age)))
+
+# predict with model 2 
+preds = predict(object = fit2, newdata = list(age = age.grid), se.fit = TRUE)
+
+# calculate standard errors 
+dfit= data.frame(prediction = preds$fit, SE1 = preds$fit+2*preds$se.fit, SE2 = preds$fit-2*preds$se.fit)
+ggplot(dfit, aes(x = age.grid, y = prediction)) + 
+  geom_point() + 
+  geom_errorbar(aes(ymin=prediction-SE2, ymax=prediction+SE1)) 
+
+
+```
+
+
+One way to select the degree of the polynomial we could fit is to use analysis of variance of the nested models m1-m5 comaring linear up to a 5th degree polynomial. The p values of an anova fit to the models reflects the model vs the one level below in complexity. 
+
+```{r}
+
+degree = 1:5 %>% as.list()
+
+fits = lapply(degree, function(x){ 
+  lm(wage ~ poly(age, degree = x),
+     data = d)
+  })
+
+anova(fits[[1]], fits[[2]], fits[[3]], fits[[4]], fits[[5]])
+
+
+
+```
+
+
+This line: 
+
+2   2997 4793430  1    228786 143.5931 < 2.2e-16 *** 
+
+The p value here is from an F-test comparing m1 (linear regression) to m2 (degree 2 polynomial fit). And so on and so forth...so the 5 degree polynomial is overkill and does not reduce variance explained compared to the 4-degree polynomial. 
+
+
+Structuring the problem as classification: predict whether a person makes >250k per year 
+
+```{r}
+d$class = ifelse(d$wage>250, 1, 0)
+d$class %>% table
+
+```
+
+
+```{r}
+f4 = as.formula(class ~ poly(age, 4))
+fit3 = glm(formula = f4, data = d, family = 'binomial')
+summary(fit3)
+```
+
+This uses a logit link function, so to get predictions on the original scale, we use type = 'respons in the `predict` function. I am not certain why these SEsa re not centered about the predicted values at higher values of age....
+
+```{r}
+preds4 = predict(fit3, newdata = list(age = age.grid), type = 'response',se.fit = TRUE)
+
+dfit = data.frame(prediction = preds4$fit, SE1 = preds4$fit+2*preds4$se.fit, SE2 = preds4$fit-2*preds4$se.fit)
+ggplot(dfit, aes(x = age.grid, y = prediction)) + 
+  geom_point() + 
+  geom_errorbar(aes(ymin=prediction-SE2, ymax=prediction+SE1)) 
+
+```
+
+Plotting this directly in ggplot against the original values: 
+
+```{r}
+attach(Wage)
+ggplot(d, aes(x = age, y = wage)) + 
+  geom_point(size  = 0.3, alpha = 0.2) + 
+  geom_smooth(method = 'lm',formula = y ~ poly(x,4))
+
+```
+
+```{r}
+plot(age,I(wage >250),xlim= c(0,100), type="n",ylim=c(0,.2))
+points(jitter(age), I((wage >250) /5), cex = .5, pch ="|", col = "darkgrey")
+lines(age.grid, preds$fit,lwd =2, col = "blue")
+matlines(age.grid, cbind(dfit$SE1, dfit$SE2) ,lwd =1, col =" blue" ,lty =3)
+```
+
+## Step Functions
+?cut -- cut divides the range of x into intervals and codes the values in x according to which interval they fall.
+```{r}
+table(cut(d$age, breaks = 4))
+
+# note that as formula captures the function call. 
+f5 = as.formula(wage ~ cut(d$age, breaks = 4))
+# fit 
+fit5 = lm(formula = f5,data = d)
+coef(summary(fit5))
+```
+
+The intercept term coefficient represents the average salary of those under 35 which was $94k. Wow I'm apparently poor. 
+
+
+
+## Splines 
+
+using the argument df, we can specify a spline fit at uniform quantiles of the predictor variable:
+
+```{r}
+library(splines)
+# cubic basis spline( degree 3 is the default). 
+f6 = wage ~ bs(age,df = 6, degree = 3)
+fit6 = lm(formula = f6, data = d)
+coef(summary(fit6))
+pred = predict(object = fit6, newdata = list(age = age.grid),se.fit = T)
+plot(age.grid, pred$fit)
+
+```
+
+#### Natural splines 
+
+We can also fit a natrual spline which will result in constrained linear fits at the beginning and end of the prediction interval. The plot below suggests the basis spline above was influenced by some highly leveraged points at high value of age. 
+
+```{r}
+f7 = wage ~ ns(age,df = 6)
+fit7 = lm(formula = f7, data = d)
+pred = predict(object = fit7, newdata = list(age = age.grid),se.fit = T)
+plot(age.grid, pred$fit)
+
+```
+
+
+#### Smoothing Splines 
+
+Smoothing splines are a completely different formulation that take the form of the loss + penalty formulation used in ridge / lasso. The tuning parameter determines the penalty for the 2nd derivative of the function which determines the number of turns. 
+
+The `cv` argument in smooth.spline does leave one out cross validation.
+
+```{r}
+
+fit9 = smooth.spline(x = d$age, y = d$wage, cv = TRUE)
+fit9$df
+```
+
+The cross validation pocedure selected a value of lambda that yields 6.8 defrees of freedom. 
+
+```{r}
+preds = predict(object = fit9, newdata = list(age = age.grid))
+plot(preds$x,preds$y)
+```
+
+
+## Local regression 
+
+see the locfit package 
+
+This perroms local regression with each neighborhood consisting of 20% of the data 
+```{r}
+
+fit10 = loess(formula = wage ~ age, span = 0.2, data = d)
+plot(fit10$fitted,  fit10$residuals)
+
+# now we convert age to data frame in this predict call.. 
+preds = predict(object = fit10, data.frame(age = age.grid))
+
+plot(x = age.grid, preds)
+
+```
+
+
+## Generalized Additive Models 
+
+Generalized additive model where rather than modeling beta(x) we model f1(x1) + f2(x2) ...
+
+Fitting a natural spline (linear at ends) function of year and age with education as a qualitative predictor. 
+
+```{r}
+# model formula
+f_gam = as.formula(wage ~ ns(year,df = 4) + ns(age, df = 5) + education)
+
+# GAM 
+gam = lm(formula = f_gam, data = d)
+
+# plot
+suppressMessages(library(gam))
+par(mfrow = c(1,3))
+plot.Gam(gam, se = TRUE)
+```
+
+
+The above plot interpretation: 
+Comparing people with the same age and level of education, the effect of year on wage increases with some slowing in 2008. Controlling for the year and a person's age, ie. holding age and year fixed the effect of education is to increase wage. From linked artice above:  
+*You can essentially present model results from a GAM as if it were any other linear model, the main difference being that for the smooth terms, there is no single coefficient you can make inference from (i.e. negative, positive, effect size etc.). So you need to rely on either interpretting the parital effects of the smooth terms visually (e.g. from a call to plot(gam_model)) or make inference from the predicted values. You can of course include normal linear terms in the model (either continuous or categorical, and in an ANOVA type framework even) and make inference from them like you normally would. Indeed, GAMs are often useful for accounting for a non-linear phenomonon that is not directly of interest, but needs to be acocunted for when making inferece about other variables.*
+
+
+There is a gam package for doing more complicated fits for things that cant be expressed with basis functions.  
+The `s()` function in the gam package specifies a smoothing spline. Again this is fitting the model below where each function is a smoothing spline with an a priori defined degrees of freedom.  
+wage = beta0 + f1(year) + f2(age) + f3(education) + errors  
+
+
+```{r}
+suppressMessages(library(gam))
+fgam3 = as.formula(wage ~ s(year, df = 4) + s(age, df = 5) + education)
+gam.m3 = gam::gam(formula = fgam3, data = d)
+
+# plot of figure 7.12 
+par(mfrow=c(1,3))
+plot(gam.m3, se = TRUE, col = 'deepskyblue3')
+```
+
+The amount of inflation from 2003 to 2009 might be more linear or might not need to e controlled for; investigating this with anova. 
+
+```{r}
+f1 = as.formula(wage ~ s(age,5) + education)
+f2 = as.formula(wage ~ year + s(age,5) + education)
+gam1 = gam::gam(formula = f1,data = d)
+gam2 = gam::gam(formula = f2,data = d)
+anova(gam1, gam2, gam.m3, test = "F")
+
+```
+
+
+We conclude that adding a linear predictor for year is better than not adding year to the model, but that a non linear function is not better than just a linear fit (p = 0.34). 
+
+
+##### What the summary for gam() tells us 
+```{r}
+summary(gam.m3)
+```
+
+p values for year and age in the section **p values for Non parametric effects** are actually a *null hypothesis of a linear relationship* and not no relationship. 
+
+##### Using local regression as building blocks for a GAM
+
+```{r}
+flo = wage ~ s(year, df = 4) + lo(age,span = 0.7)
+gam.lo = gam::gam(formula = flo, data = d)
+par(mfrow = c(1,2))
+plot.Gam(gam.lo)
+```
+
+Now we use local regression to fit an interaction between year and ageby a local regression surface, a 2d gaussian.  
+
+```{r}
+library(akima)
+flo_interaction = as.formula(wage ~ lo(year,age,span = 0.5))
+gam_interaction = gam::gam(formula = flo_interaction,data = d)
+plot(gam_interaction)
+```
+
+The same logic applies to logistic regression fits. 
